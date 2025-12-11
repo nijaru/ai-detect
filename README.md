@@ -25,10 +25,11 @@ Analyze without moving files:
 
 ```bash
 uv run ai-detect detect photo.jpg
-uv run ai-detect detect photos -r           # Recursive
-uv run ai-detect detect photos -o json      # JSON output
-uv run ai-detect detect photos -o table     # Table output
-uv run ai-detect detect photos -s out.json  # Save results
+uv run ai-detect detect photos -r             # Recursive
+uv run ai-detect detect photos -f json        # JSON output
+uv run ai-detect detect photos -f table       # Table output
+uv run ai-detect detect photos -o out.json    # Save to file
+uv run ai-detect detect photos -t 0.7         # Custom threshold
 ```
 
 ### sort
@@ -37,9 +38,10 @@ Analyze and move into `ai/` and `real/` subdirectories:
 
 ```bash
 uv run ai-detect sort photos
-uv run ai-detect sort photos -r     # Recursive
-uv run ai-detect sort photos -f     # Re-analyze already sorted
-uv run ai-detect sort photos -n     # Dry run
+uv run ai-detect sort photos -r       # Recursive
+uv run ai-detect sort photos -f       # Re-analyze already sorted
+uv run ai-detect sort photos -n       # Dry run (preview)
+uv run ai-detect sort photos -t 0.7   # Custom threshold
 ```
 
 ### Subject Segmentation (--subjects)
