@@ -42,15 +42,15 @@ uv run ai-detect sort photos -f     # Re-analyze already sorted
 uv run ai-detect sort photos -n     # Dry run
 ```
 
-### Subject Segmentation (-S)
+### Subject Segmentation (--subjects)
 
 > **Requires NVIDIA GPU (CUDA).** Will not work on CPU or Apple Silicon.
 
 Segments people and analyzes each separately. Catches AI-generated people composited onto real photos. ~5x slower than default.
 
 ```bash
-uv run ai-detect sort photos -S
-uv run ai-detect sort photos -r -f -S   # Re-sort with segmentation
+uv run ai-detect sort photos --subjects
+uv run ai-detect sort photos -r -f --subjects   # Re-sort with segmentation
 ```
 
 ## Models

@@ -114,7 +114,9 @@ def detect(
     ] = None,
     subjects: Annotated[
         bool,
-        typer.Option("--subjects", "-S", help="Segment and analyze people separately"),
+        typer.Option(
+            "--subjects", help="Segment and analyze people separately (CUDA only)"
+        ),
     ] = False,
 ) -> None:
     """Detect AI-generated images."""
@@ -233,7 +235,9 @@ def sort(
     ] = False,
     subjects: Annotated[
         bool,
-        typer.Option("--subjects", "-S", help="Segment and analyze people separately"),
+        typer.Option(
+            "--subjects", help="Segment and analyze people separately (CUDA only)"
+        ),
     ] = False,
 ) -> None:
     """Detect and sort images into ai/ and real/ subdirectories."""
