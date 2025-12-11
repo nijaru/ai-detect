@@ -133,7 +133,7 @@ def detect(
 
     segmenter = None
     if subjects:
-        err_console.print("Loading segmentation model (Sa2VA-Qwen3-VL-2B)...")
+        err_console.print("Loading segmentation model (Sa2VA-Qwen3-VL-1B)...")
         from .segment import PersonSegmenter
 
         segmenter = PersonSegmenter()
@@ -267,7 +267,7 @@ def sort(
 
     segmenter = None
     if subjects:
-        err_console.print("Loading segmentation model (Sa2VA-Qwen3-VL-2B)...")
+        err_console.print("Loading segmentation model (Sa2VA-Qwen3-VL-1B)...")
         from .segment import PersonSegmenter
 
         segmenter = PersonSegmenter()

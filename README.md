@@ -58,7 +58,7 @@ uv run ai-detect sort photos -r -f -S   # Re-sort with segmentation
 | Model                                                                                         | Purpose             | Size   |
 | --------------------------------------------------------------------------------------------- | ------------------- | ------ |
 | [Ateeqq/ai-vs-human-image-detector](https://huggingface.co/Ateeqq/ai-vs-human-image-detector) | AI detection        | ~400MB |
-| [ByteDance/Sa2VA-Qwen3-VL-2B](https://huggingface.co/ByteDance/Sa2VA-Qwen3-VL-2B)             | Person segmentation | ~10GB  |
+| [ByteDance/Sa2VA-Qwen3-VL-1B](https://huggingface.co/ByteDance/Sa2VA-Qwen3-VL-1B)             | Person segmentation | ~5GB   |
 
 ## License
 
