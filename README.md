@@ -6,8 +6,8 @@ Detect and sort AI-generated images. Optionally segments people to catch AI comp
 
 ```bash
 uv sync
-uv run ai-detect detect photo.jpg   # Check single image
-uv run ai-detect sort photos -r     # Sort directory into ai/ and real/
+uv run ai-detect photo.jpg           # Check single image
+uv run ai-detect photos -r -s        # Sort directory into ai/ and real/
 ```
 
 ## Features
@@ -15,33 +15,32 @@ uv run ai-detect sort photos -r     # Sort directory into ai/ and real/
 - Fast detection using SigLIP-based classifier
 - Batch processing with progress bars
 - Multiple output formats (text, json, table)
-- **Subject segmentation** (`-S`): Analyzes people separately to catch AI-generated people on real backgrounds
+- **Subject segmentation** (`--subjects`): Analyzes people separately to catch AI-generated people on real backgrounds
 
 ## Usage
 
-### detect
-
-Analyze without moving files:
+### Analyze
 
 ```bash
-uv run ai-detect detect photo.jpg
-uv run ai-detect detect photos -r             # Recursive
-uv run ai-detect detect photos -f json        # JSON output
-uv run ai-detect detect photos -f table       # Table output
-uv run ai-detect detect photos -o out.json    # Save to file
-uv run ai-detect detect photos -t 0.7         # Custom threshold
+ai-detect photo.jpg                  # Single image
+ai-detect photos                     # Directory
+ai-detect photos -r                  # Recursive
+ai-detect photos -f json             # JSON output
+ai-detect photos -f table            # Table output
+ai-detect photos -o results.json     # Save to file
+ai-detect photos -t 0.7              # Custom threshold
 ```
 
-### sort
+### Sort
 
-Analyze and move into `ai/` and `real/` subdirectories:
+Move images into `ai/` and `real/` subdirectories:
 
 ```bash
-uv run ai-detect sort photos
-uv run ai-detect sort photos -r       # Recursive
-uv run ai-detect sort photos -f       # Re-analyze already sorted
-uv run ai-detect sort photos -n       # Dry run (preview)
-uv run ai-detect sort photos -t 0.7   # Custom threshold
+ai-detect photos -s                  # Sort
+ai-detect photos -rs                 # Recursive sort
+ai-detect photos -sn                 # Dry run (preview)
+ai-detect photos -s --force          # Re-analyze already sorted
+ai-detect photos -s -t 0.7           # Custom threshold
 ```
 
 ### Subject Segmentation (--subjects)
@@ -51,8 +50,8 @@ uv run ai-detect sort photos -t 0.7   # Custom threshold
 Segments people and analyzes each separately. Catches AI-generated people composited onto real photos. ~5x slower than default.
 
 ```bash
-uv run ai-detect sort photos --subjects
-uv run ai-detect sort photos -r -f --subjects   # Re-sort with segmentation
+ai-detect photos --subjects          # Analyze with segmentation
+ai-detect photos -rs --subjects      # Sort with segmentation
 ```
 
 ## Models

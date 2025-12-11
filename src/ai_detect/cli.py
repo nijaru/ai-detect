@@ -27,15 +27,31 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"}
 DEFAULT_THRESHOLD = 0.5
 
 
-def collect_images(path: Path, recursive: bool = False) -> list[Path]:
-    """Collect image files from path."""
+def collect_images(
+    path: Path,
+    recursive: bool,
+    ai_dir: Path | None = None,
+    real_dir: Path | None = None,
+) -> list[Path]:
+    """Collect image files from path, optionally excluding ai/real dirs."""
     if path.is_file():
         if path.suffix.lower() in IMAGE_EXTENSIONS:
             return [path]
         return []
 
     pattern = path.rglob("*") if recursive else path.glob("*")
-    return [f for f in pattern if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS]
+    images = [
+        f for f in pattern if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
+    ]
+
+    if ai_dir and real_dir:
+        images = [
+            img
+            for img in images
+            if not (ai_dir in img.parents or real_dir in img.parents)
+        ]
+
+    return images
 
 
 def load_image(path: Path) -> Image.Image | None:
@@ -68,11 +84,7 @@ def detect_with_subjects(
     detector: Detector,
     segmenter: "PersonSegmenter",
 ) -> DetectionResult:
-    """Detect AI by analyzing segmented people in the image.
-
-    If any person is detected as AI, the whole image is flagged.
-    Falls back to full image detection if no people are found.
-    """
+    """Detect AI by analyzing segmented people in the image."""
     crops = segmenter.segment_people(image)
 
     if not crops:
@@ -98,123 +110,6 @@ def detect_with_subjects(
     )
 
 
-@app.command()
-def detect(
-    path: Annotated[Path, typer.Argument(help="Image file or directory to analyze")],
-    recursive: Annotated[
-        bool,
-        typer.Option("--recursive", "-r", help="Search directories recursively"),
-    ] = False,
-    output: Annotated[
-        Path | None,
-        typer.Option("--output", "-o", help="Save results to JSON file"),
-    ] = None,
-    format: Annotated[
-        str,
-        typer.Option("--format", "-f", help="Output format: text, json, table"),
-    ] = "text",
-    threshold: Annotated[
-        float,
-        typer.Option("--threshold", "-t", help="Confidence threshold (0.0-1.0)"),
-    ] = DEFAULT_THRESHOLD,
-    subjects: Annotated[
-        bool,
-        typer.Option(
-            "--subjects", help="Segment and analyze people separately (CUDA only)"
-        ),
-    ] = False,
-) -> None:
-    """Detect AI-generated images."""
-    if not path.exists():
-        err_console.print(f"[red]Error: Path does not exist: {path}[/red]")
-        raise typer.Exit(1)
-
-    images = collect_images(path, recursive)
-    if not images:
-        err_console.print(f"[yellow]No images found at {path}[/yellow]")
-        raise typer.Exit(0)
-
-    err_console.print("Loading AI detector...")
-    detector = Detector()
-    detector.load()
-
-    segmenter = None
-    if subjects:
-        err_console.print("Loading segmentation model (Sa2VA-Qwen3-VL-1B)...")
-        from .segment import PersonSegmenter
-
-        segmenter = PersonSegmenter()
-        segmenter.load()
-
-    all_results = []
-    show_progress = len(images) > 1
-
-    iterator = tqdm(
-        images, desc="Processing", disable=not show_progress, file=sys.stderr
-    )
-    for image_path in iterator:
-        image = load_image(image_path)
-        if image is None:
-            continue
-
-        start = time.time()
-        if segmenter:
-            result = detect_with_subjects(image, detector, segmenter)
-        else:
-            result = detector.detect(image)
-        elapsed = time.time() - start
-
-        data = format_result(image_path, result, elapsed, threshold)
-        all_results.append(data)
-
-        if format == "text" and not show_progress:
-            verdict = data["verdict"].upper()
-            color = "red" if data["verdict"] == "ai" else "green"
-            console.print(f"[{color}]{verdict}[/{color}] ({data['confidence']:.0%})")
-        elif format == "json" and not output:
-            console.print_json(json.dumps(data))
-
-    # Sort by confidence (most confident first)
-    all_results.sort(key=lambda r: r["confidence"], reverse=True)
-
-    if format == "text" and show_progress:
-        for r in all_results:
-            verdict = r["verdict"].upper()
-            color = "red" if r["verdict"] == "ai" else "green"
-            console.print(
-                f"{Path(r['file']).name}: [{color}]{verdict}[/{color}] ({r['confidence']:.0%})"
-            )
-
-    if format == "table" and all_results:
-        table = Table(title="Detection Results")
-        table.add_column("File", style="cyan")
-        table.add_column("Verdict", style="bold")
-        table.add_column("Confidence")
-        table.add_column("Time")
-
-        for r in all_results:
-            color = "red" if r["verdict"] == "ai" else "green"
-            table.add_row(
-                Path(r["file"]).name,
-                f"[{color}]{r['verdict'].upper()}[/{color}]",
-                f"{r['confidence']:.0%}",
-                f"{r['time']:.1f}s",
-            )
-        console.print(table)
-
-    if output:
-        output.write_text(json.dumps(all_results, indent=2))
-        err_console.print(f"[green]Results saved to {output}[/green]")
-    elif format == "json" and show_progress:
-        console.print_json(json.dumps(all_results))
-
-    if show_progress and format != "json":
-        ai_count = sum(1 for r in all_results if r["verdict"] == "ai")
-        console.print(
-            f"\n[bold]Summary:[/bold] {ai_count}/{len(all_results)} AI-generated"
-        )
-
-
 def unique_path(dest: Path) -> Path:
     """Generate unique path by adding numeric suffix if file exists."""
     if not dest.exists():
@@ -231,24 +126,38 @@ def unique_path(dest: Path) -> Path:
 
 
 @app.command()
-def sort(
-    path: Annotated[Path, typer.Argument(help="Directory containing images to sort")],
+def main(
+    path: Annotated[Path, typer.Argument(help="Image file or directory to analyze")],
     recursive: Annotated[
         bool,
         typer.Option("--recursive", "-r", help="Search directories recursively"),
     ] = False,
-    force: Annotated[
+    sort: Annotated[
         bool,
-        typer.Option("--force", "-f", help="Re-analyze images already in ai/ or real/"),
+        typer.Option(
+            "--sort", "-s", help="Sort images into ai/ and real/ subdirectories"
+        ),
     ] = False,
-    dry_run: Annotated[
-        bool,
-        typer.Option("--dry-run", "-n", help="Preview changes without moving files"),
-    ] = False,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Save results to JSON file"),
+    ] = None,
+    format: Annotated[
+        str,
+        typer.Option("--format", "-f", help="Output format: text, json, table"),
+    ] = "text",
     threshold: Annotated[
         float,
         typer.Option("--threshold", "-t", help="Confidence threshold (0.0-1.0)"),
     ] = DEFAULT_THRESHOLD,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", "-n", help="Preview sort without moving files"),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Re-analyze images already in ai/ or real/"),
+    ] = False,
     subjects: Annotated[
         bool,
         typer.Option(
@@ -256,25 +165,20 @@ def sort(
         ),
     ] = False,
 ) -> None:
-    """Detect and sort images into ai/ and real/ subdirectories."""
+    """Detect AI-generated images."""
     if not path.exists():
         err_console.print(f"[red]Error: Path does not exist: {path}[/red]")
         raise typer.Exit(1)
 
-    if not path.is_dir():
-        err_console.print(f"[red]Error: Path must be a directory: {path}[/red]")
+    if sort and not path.is_dir():
+        err_console.print(f"[red]Error: --sort requires a directory: {path}[/red]")
         raise typer.Exit(1)
 
-    ai_dir = path / "ai"
-    real_dir = path / "real"
+    ai_dir = path / "ai" if sort else None
+    real_dir = path / "real" if sort else None
 
-    images = collect_images(path, recursive)
-    if not force:
-        images = [
-            img
-            for img in images
-            if not (ai_dir in img.parents or real_dir in img.parents)
-        ]
+    exclude_dirs = (ai_dir, real_dir) if sort and not force else (None, None)
+    images = collect_images(path, recursive, *exclude_dirs)
 
     if not images:
         err_console.print(f"[yellow]No images found at {path}[/yellow]")
@@ -292,67 +196,132 @@ def sort(
         segmenter = PersonSegmenter()
         segmenter.load()
 
-    ai_dir.mkdir(exist_ok=True)
-    real_dir.mkdir(exist_ok=True)
+    if sort:
+        ai_dir.mkdir(exist_ok=True)
+        real_dir.mkdir(exist_ok=True)
 
+    all_results = []
+    show_progress = len(images) > 1
     ai_count = 0
     real_count = 0
     skipped_count = 0
-
     moves = []
 
-    for image_path in tqdm(images, desc="Processing", file=sys.stderr):
+    iterator = tqdm(
+        images, desc="Processing", disable=not show_progress, file=sys.stderr
+    )
+    for image_path in iterator:
         image = load_image(image_path)
         if image is None:
             skipped_count += 1
             continue
 
+        start = time.time()
         if segmenter:
             result = detect_with_subjects(image, detector, segmenter)
         else:
             result = detector.detect(image)
+        elapsed = time.time() - start
 
-        is_ai = result.is_ai and result.confidence >= threshold
-        dest_dir = ai_dir if is_ai else real_dir
+        data = format_result(image_path, result, elapsed, threshold)
+        is_ai = data["verdict"] == "ai"
 
-        if image_path.parent == dest_dir:
+        if sort:
+            dest_dir = ai_dir if is_ai else real_dir
+
+            if image_path.parent == dest_dir:
+                if is_ai:
+                    ai_count += 1
+                else:
+                    real_count += 1
+                continue
+
+            dest = unique_path(dest_dir / image_path.name)
+
+            if dry_run:
+                moves.append((image_path, dest, is_ai, data["confidence"]))
+            else:
+                try:
+                    shutil.move(str(image_path), str(dest))
+                except OSError as e:
+                    err_console.print(
+                        f"[yellow]Warning: Could not move {image_path}: {e}[/yellow]"
+                    )
+                    skipped_count += 1
+                    continue
+
             if is_ai:
                 ai_count += 1
             else:
                 real_count += 1
-            continue
-
-        dest = unique_path(dest_dir / image_path.name)
-
-        if dry_run:
-            moves.append((image_path, dest, is_ai, result.confidence))
         else:
-            try:
-                shutil.move(str(image_path), str(dest))
-            except OSError as e:
-                err_console.print(
-                    f"[yellow]Warning: Could not move {image_path}: {e}[/yellow]"
+            all_results.append(data)
+
+            if format == "text" and not show_progress:
+                verdict = data["verdict"].upper()
+                color = "red" if is_ai else "green"
+                console.print(
+                    f"[{color}]{verdict}[/{color}] ({data['confidence']:.0%})"
                 )
-                skipped_count += 1
-                continue
+            elif format == "json" and not output:
+                console.print_json(json.dumps(data))
 
-        if is_ai:
-            ai_count += 1
-        else:
-            real_count += 1
+    if sort:
+        if dry_run and moves:
+            console.print("\n[bold]Would move:[/bold]")
+            for src, dest, is_ai, conf in sorted(
+                moves, key=lambda x: x[3], reverse=True
+            ):
+                verdict = "ai" if is_ai else "real"
+                color = "red" if is_ai else "green"
+                console.print(
+                    f"  {src.name} → [{color}]{verdict}/[/{color}] ({conf:.0%})"
+                )
 
-    if dry_run and moves:
-        console.print("\n[bold]Would move:[/bold]")
-        for src, dest, is_ai, conf in sorted(moves, key=lambda x: x[3], reverse=True):
-            verdict = "ai" if is_ai else "real"
-            color = "red" if is_ai else "green"
-            console.print(f"  {src.name} → [{color}]{verdict}/[/{color}] ({conf:.0%})")
+        action = "Would sort" if dry_run else "Sorted"
+        summary = f"[green]{action} {ai_count} to ai/, {real_count} to real/[/green]"
+        if skipped_count:
+            summary += f" [yellow]({skipped_count} skipped)[/yellow]"
+        console.print(summary)
+    else:
+        all_results.sort(key=lambda r: r["confidence"], reverse=True)
 
-    action = "Would sort" if dry_run else "Sorted"
-    summary = f"[green]{action} {ai_count} to ai/, {real_count} to real/[/green]"
-    if skipped_count:
-        summary += f" [yellow]({skipped_count} skipped)[/yellow]"
-    console.print(summary)
+        if format == "text" and show_progress:
+            for r in all_results:
+                verdict = r["verdict"].upper()
+                color = "red" if r["verdict"] == "ai" else "green"
+                console.print(
+                    f"{Path(r['file']).name}: [{color}]{verdict}[/{color}] ({r['confidence']:.0%})"
+                )
+
+        if format == "table" and all_results:
+            table = Table(title="Detection Results")
+            table.add_column("File", style="cyan")
+            table.add_column("Verdict", style="bold")
+            table.add_column("Confidence")
+            table.add_column("Time")
+
+            for r in all_results:
+                color = "red" if r["verdict"] == "ai" else "green"
+                table.add_row(
+                    Path(r["file"]).name,
+                    f"[{color}]{r['verdict'].upper()}[/{color}]",
+                    f"{r['confidence']:.0%}",
+                    f"{r['time']:.1f}s",
+                )
+            console.print(table)
+
+        if output:
+            output.write_text(json.dumps(all_results, indent=2))
+            err_console.print(f"[green]Results saved to {output}[/green]")
+        elif format == "json" and show_progress:
+            console.print_json(json.dumps(all_results))
+
+        if show_progress and format != "json":
+            ai_count = sum(1 for r in all_results if r["verdict"] == "ai")
+            console.print(
+                f"\n[bold]Summary:[/bold] {ai_count}/{len(all_results)} AI-generated"
+            )
 
 
 if __name__ == "__main__":
