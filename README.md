@@ -46,7 +46,7 @@ uv run ai-detect sort photos -n     # Dry run
 
 > **Requires NVIDIA GPU (CUDA).** Will not work on CPU or Apple Silicon.
 
-Segments people and analyzes each separately. Catches AI-generated people composited onto real photos. ~10x slower than default.
+Segments people and analyzes each separately. Catches AI-generated people composited onto real photos. ~5x slower than default.
 
 ```bash
 uv run ai-detect sort photos -S
