@@ -1,15 +1,13 @@
 [project]
 name = "ai-detect"
-version = "0.1.0"
-description = "AI-generated image detection using ensemble of SOTA detectors"
+version = "0.0.1"
+description = "AI-generated image detection"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "torch",
     "transformers",
     "pillow",
-    "open-clip-torch",
-    "timm",
     "tqdm",
     "rich",
     "typer",
