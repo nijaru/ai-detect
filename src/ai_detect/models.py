@@ -1,9 +1,17 @@
 """AI image detector using Ateeqq/ai-vs-human-image-detector."""
 
+import logging
+import warnings
 from dataclasses import dataclass
 
 import torch
 from PIL import Image
+
+# Suppress verbose HuggingFace warnings
+warnings.filterwarnings("ignore", message=".*use_fast.*")
+logging.getLogger("transformers").setLevel(logging.ERROR)
+
+logger = logging.getLogger(__name__)
 
 MODEL_ID = "Ateeqq/ai-vs-human-image-detector"
 
@@ -26,7 +34,7 @@ class Detector:
     def load(self) -> None:
         from transformers import AutoImageProcessor, AutoModelForImageClassification
 
-        self._processor = AutoImageProcessor.from_pretrained(MODEL_ID)
+        self._processor = AutoImageProcessor.from_pretrained(MODEL_ID, use_fast=True)
         self._model = AutoModelForImageClassification.from_pretrained(MODEL_ID)
         self._model.to(self.device)
         self._model.eval()
@@ -44,8 +52,13 @@ class Detector:
         labels = self._model.config.id2label
         scores = {labels[i]: probs[0][i].item() for i in range(len(labels))}
 
-        ai_score = scores.get("AI", scores.get("ai", 0.0))
-        human_score = scores.get("Human", scores.get("human", 0.0))
+        # Normalize label lookup (model uses "ai" and "hum")
+        scores_lower = {k.lower(): v for k, v in scores.items()}
+        ai_score = scores_lower.get("ai", 0.0)
+        human_score = scores_lower.get("hum", scores_lower.get("human", 0.0))
+
+        if ai_score == 0.0 and human_score == 0.0:
+            logger.warning(f"Unknown model labels: {list(scores.keys())}")
 
         is_ai = ai_score > human_score
         confidence = ai_score if is_ai else human_score

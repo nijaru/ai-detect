@@ -6,11 +6,15 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "torch",
+    "torchvision",
     "transformers",
+    "accelerate",
     "pillow",
     "tqdm",
     "rich",
     "typer",
+    "numpy",
+    "qwen_vl_utils",
 ]
 
 [project.scripts]
