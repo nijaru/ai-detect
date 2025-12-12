@@ -194,7 +194,11 @@ def main(
         from .segment import PersonSegmenter
 
         segmenter = PersonSegmenter()
-        segmenter.load()
+        try:
+            segmenter.load()
+        except RuntimeError as e:
+            err_console.print(f"[red]Error: {e}[/red]")
+            raise typer.Exit(1)
 
     if sort:
         ai_dir.mkdir(exist_ok=True)
