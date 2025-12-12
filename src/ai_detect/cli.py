@@ -125,9 +125,21 @@ def unique_path(dest: Path) -> Path:
         counter += 1
 
 
+FORMATS = ["text", "json", "table"]
+
+
+def validate_threshold(value: float) -> float:
+    if not 0.0 <= value <= 1.0:
+        raise typer.BadParameter("Must be between 0.0 and 1.0")
+    return value
+
+
 @app.command()
 def main(
-    path: Annotated[Path, typer.Argument(help="Image file or directory to analyze")],
+    ctx: typer.Context,
+    path: Annotated[
+        Path | None, typer.Argument(help="Image file or directory to analyze")
+    ] = None,
     recursive: Annotated[
         bool,
         typer.Option("--recursive", "-r", help="Search directories recursively"),
@@ -148,7 +160,12 @@ def main(
     ] = "text",
     threshold: Annotated[
         float,
-        typer.Option("--threshold", "-t", help="Confidence threshold (0.0-1.0)"),
+        typer.Option(
+            "--threshold",
+            "-t",
+            help="Confidence threshold (0.0-1.0)",
+            callback=validate_threshold,
+        ),
     ] = DEFAULT_THRESHOLD,
     dry_run: Annotated[
         bool,
@@ -166,6 +183,16 @@ def main(
     ] = False,
 ) -> None:
     """Detect AI-generated images."""
+    if path is None:
+        console.print(ctx.get_help())
+        raise typer.Exit(0)
+
+    if format not in FORMATS:
+        err_console.print(
+            f"[red]Error: Invalid format '{format}'. Choose from: {', '.join(FORMATS)}[/red]"
+        )
+        raise typer.Exit(1)
+
     if not path.exists():
         err_console.print(f"[red]Error: Path does not exist: {path}[/red]")
         raise typer.Exit(1)
