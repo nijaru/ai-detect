@@ -17,7 +17,7 @@ logging.getLogger("transformers").setLevel(logging.ERROR)
 
 logger = logging.getLogger(__name__)
 
-SA2VA_MODEL_ID = "ByteDance/Sa2VA-Qwen3-VL-1B"
+SA2VA_MODEL_ID = "ByteDance/Sa2VA-Qwen3-VL-2B"
 
 
 @dataclass
