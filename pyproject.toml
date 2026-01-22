@@ -1,6 +1,6 @@
 [project]
 name = "ai-detect"
-version = "0.0.1"
+version = "0.1.0"
 description = "AI-generated image detection"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,6 +15,10 @@ dependencies = [
     "typer",
     "numpy",
     "qwen_vl_utils",
+    "open_clip_torch",
+    "huggingface_hub",
+    "ultralytics",
+    "scipy",
 ]
 
 [project.scripts]

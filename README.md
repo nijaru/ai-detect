@@ -1,65 +1,95 @@
 # ai-detect
 
-Detect and sort AI-generated images. Optionally segments people to catch AI composites on real backgrounds.
+Detect AI-generated images using state-of-the-art CLIP-based detection.
 
 ## Quick Start
 
 ```bash
 uv sync
-uv run ai-detect photo.jpg           # Check single image
-uv run ai-detect photos -r -s        # Sort directory into ai/ and real/
+uv run ai-detect photo.jpg           # Analyze single image
+uv run ai-detect photos/ -r -s       # Sort directory into ai/ and real/
 ```
 
-## Features
+## How It Works
 
-- Fast detection using SigLIP-based classifier
-- Batch processing with progress bars
-- Multiple output formats (text, json, table)
-- **Subject segmentation** (`--subjects`): Analyzes people separately to catch AI-generated people on real backgrounds
+By default, ai-detect uses **smart detection** that automatically:
+
+1. Analyzes the full image
+2. Detects people and analyzes each separately (catches AI faces on real backgrounds)
+3. Samples strategic patches on large images (catches partial edits/inpainting)
+
+Returns the **maximum AI confidence** across all methods.
 
 ## Usage
 
-### Analyze
-
 ```bash
-ai-detect photo.jpg                  # Single image
-ai-detect photos                     # Directory
-ai-detect photos -r                  # Recursive
-ai-detect photos -f json             # JSON output
-ai-detect photos -f table            # Table output
-ai-detect photos -o results.json     # Save to file
-ai-detect photos -t 0.7              # Custom threshold
+ai-detect photo.jpg                  # Smart detection (recommended)
+ai-detect photo.jpg --fast           # Full image only (~0.3s)
+ai-detect photo.jpg --thorough       # All methods + frequency analysis
 ```
 
-### Sort
+### Batch Processing
+
+```bash
+ai-detect photos/                    # Analyze directory
+ai-detect photos/ -r                 # Recursive
+ai-detect photos/ -f table           # Table output
+ai-detect photos/ -o results.json    # Save to JSON
+```
+
+### Sort Mode
 
 Move images into `ai/` and `real/` subdirectories:
 
 ```bash
-ai-detect photos -s                  # Sort
-ai-detect photos -rs                 # Recursive sort
-ai-detect photos -sn                 # Dry run (preview)
-ai-detect photos -s --force          # Re-analyze already sorted
-ai-detect photos -s -t 0.7           # Custom threshold
+ai-detect photos/ -s                 # Sort
+ai-detect photos/ -rs                # Recursive sort
+ai-detect photos/ -sn                # Dry run (preview)
+ai-detect photos/ -s --force         # Re-analyze already sorted
 ```
 
-### Subject Segmentation (--subjects)
+## Detection Modes
 
-> **Requires NVIDIA GPU (CUDA).** Will not work on CPU or Apple Silicon.
+| Mode         | Speed  | What it does                                   |
+| ------------ | ------ | ---------------------------------------------- |
+| (default)    | ~1-3s  | Full image + people + patches for large images |
+| `--fast`     | ~0.3s  | Full image only                                |
+| `--thorough` | ~5-10s | All methods + dense patches + frequency        |
 
-Segments people and analyzes each separately. Catches AI-generated people composited onto real photos. ~5x slower than default.
+## Example Output
 
-```bash
-ai-detect photos --subjects          # Analyze with segmentation
-ai-detect photos -rs --subjects      # Sort with segmentation
+Single image with smart detection:
+
+```
+AI (94%) [full_image:72%, person_1:94%, person_2:31%]
+```
+
+Batch processing:
+
+```
+Processing: 100%|████████████| 50/50 [01:23<00:00]
+photo1.jpg: AI (94%)
+photo2.jpg: REAL (89%)
+...
+Summary: 12/50 AI-generated
 ```
 
 ## Models
 
-| Model                                                                                         | Purpose             | Size   |
-| --------------------------------------------------------------------------------------------- | ------------------- | ------ |
-| [Ateeqq/ai-vs-human-image-detector](https://huggingface.co/Ateeqq/ai-vs-human-image-detector) | AI detection        | ~400MB |
-| [ByteDance/Sa2VA-Qwen3-VL-1B](https://huggingface.co/ByteDance/Sa2VA-Qwen3-VL-1B)             | Person segmentation | ~5GB   |
+| Component | Model                    | Size |
+| --------- | ------------------------ | ---- |
+| Detection | GRIP-UNINA CLIP ViT-L/14 | ~2GB |
+| People    | YOLO11n                  | ~6MB |
+
+First run downloads models automatically.
+
+## Advanced Options
+
+```bash
+ai-detect photo.jpg --backend siglip    # Use SigLIP instead of CLIP
+ai-detect photo.jpg --segmenter sa2va   # Use Sa2VA segmenter (CUDA only)
+ai-detect photo.jpg -t 0.7              # Custom threshold
+```
 
 ## License
 

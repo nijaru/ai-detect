@@ -1,11 +1,15 @@
 """CLI interface for AI image detection."""
 
 import json
+import logging
 import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlparse
+from urllib.request import urlretrieve
 
 import typer
 from PIL import Image
@@ -14,6 +18,31 @@ from rich.table import Table
 from tqdm import tqdm
 
 from .models import Detector, DetectionResult
+
+logger = logging.getLogger("ai_detect")
+
+
+def is_url(path: str) -> bool:
+    """Check if path is a URL."""
+    try:
+        result = urlparse(path)
+        return result.scheme in ("http", "https")
+    except Exception:
+        return False
+
+
+def download_image(url: str) -> Path | None:
+    """Download image from URL to temp file."""
+    try:
+        parsed = urlparse(url)
+        ext = Path(parsed.path).suffix or ".jpg"
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
+            urlretrieve(url, f.name)
+            return Path(f.name)
+    except Exception as e:
+        logger.error(f"Failed to download {url}: {e}")
+        return None
+
 
 app = typer.Typer(
     name="ai-detect",
@@ -25,6 +54,8 @@ err_console = Console(stderr=True)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"}
 DEFAULT_THRESHOLD = 0.5
+
+logger = logging.getLogger("ai_detect")
 
 
 def collect_images(
@@ -79,37 +110,6 @@ def format_result(
     }
 
 
-def detect_with_subjects(
-    image: "Image.Image",
-    detector: Detector,
-    segmenter: "PersonSegmenter",
-) -> DetectionResult:
-    """Detect AI by analyzing segmented people in the image."""
-    crops = segmenter.segment_people(image)
-
-    if not crops:
-        return detector.detect(image)
-
-    max_ai_score = 0.0
-    max_human_score = 0.0
-
-    for crop in crops:
-        result = detector.detect(crop.image)
-        ai_score = result.scores.get("ai", 0.0)
-        human_score = result.scores.get("hum", result.scores.get("human", 0.0))
-        max_ai_score = max(max_ai_score, ai_score)
-        max_human_score = max(max_human_score, human_score)
-
-    is_ai = max_ai_score > max_human_score
-    confidence = max_ai_score if is_ai else max_human_score
-
-    return DetectionResult(
-        is_ai=is_ai,
-        confidence=confidence,
-        scores={"ai": max_ai_score, "hum": max_human_score, "subjects": len(crops)},
-    )
-
-
 def unique_path(dest: Path) -> Path:
     """Generate unique path by adding numeric suffix if file exists."""
     if not dest.exists():
@@ -138,8 +138,9 @@ def validate_threshold(value: float) -> float:
 def main(
     ctx: typer.Context,
     path: Annotated[
-        Path | None, typer.Argument(help="Image file or directory to analyze")
+        str | None, typer.Argument(help="Image file, directory, or URL to analyze")
     ] = None,
+    # Common options
     recursive: Annotated[
         bool,
         typer.Option("--recursive", "-r", help="Search directories recursively"),
@@ -175,14 +176,62 @@ def main(
         bool,
         typer.Option("--force", help="Re-analyze images already in ai/ or real/"),
     ] = False,
-    subjects: Annotated[
+    # Detection modes
+    fast: Annotated[
         bool,
-        typer.Option(
-            "--subjects", help="Segment and analyze people separately (CUDA only)"
-        ),
+        typer.Option("--fast", help="Fast mode: full image only (~0.3s)"),
     ] = False,
+    thorough: Annotated[
+        bool,
+        typer.Option("--thorough", help="Thorough mode: all methods + frequency"),
+    ] = False,
+    # Verbosity
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Show detailed logging"),
+    ] = False,
+    quiet: Annotated[
+        bool,
+        typer.Option("--quiet", "-q", help="Suppress non-essential output"),
+    ] = False,
+    # Advanced options (hidden from main help)
+    backend: Annotated[
+        str,
+        typer.Option(
+            "--backend",
+            "-b",
+            help="Detection backend: clip or siglip",
+            hidden=True,
+        ),
+    ] = "clip",
+    segmenter: Annotated[
+        str,
+        typer.Option(
+            "--segmenter",
+            help="Segmentation backend: yolo or sa2va",
+            hidden=True,
+        ),
+    ] = "yolo",
 ) -> None:
-    """Detect AI-generated images."""
+    """Detect AI-generated images.
+
+    By default, uses smart detection that combines:
+    - Full image analysis
+    - Person detection (catches AI people on real backgrounds)
+    - Strategic patches for large images (catches partial edits)
+
+    Use --fast for speed (~0.3s) or --thorough for maximum accuracy.
+
+    Supports local files, directories, and URLs.
+    """
+    # Setup logging
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s: %(message)s")
+    elif quiet:
+        logging.basicConfig(level=logging.ERROR)
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
     if path is None:
         console.print(ctx.get_help())
         raise typer.Exit(0)
@@ -193,39 +242,63 @@ def main(
         )
         raise typer.Exit(1)
 
-    if not path.exists():
-        err_console.print(f"[red]Error: Path does not exist: {path}[/red]")
+    if fast and thorough:
+        err_console.print("[red]Error: Cannot use --fast and --thorough together[/red]")
         raise typer.Exit(1)
 
-    if sort and not path.is_dir():
-        err_console.print(f"[red]Error: --sort requires a directory: {path}[/red]")
+    # Handle URL input
+    temp_file = None
+    if is_url(path):
+        if sort:
+            err_console.print("[red]Error: --sort not supported with URLs[/red]")
+            raise typer.Exit(1)
+        if not quiet:
+            err_console.print(f"Downloading {path}...")
+        temp_file = download_image(path)
+        if temp_file is None:
+            err_console.print(f"[red]Error: Failed to download {path}[/red]")
+            raise typer.Exit(1)
+        local_path = temp_file
+    else:
+        local_path = Path(path)
+
+    if not local_path.exists():
+        err_console.print(f"[red]Error: Path does not exist: {local_path}[/red]")
         raise typer.Exit(1)
 
-    ai_dir = path / "ai" if sort else None
-    real_dir = path / "real" if sort else None
+    if sort and not local_path.is_dir():
+        err_console.print(
+            f"[red]Error: --sort requires a directory: {local_path}[/red]"
+        )
+        raise typer.Exit(1)
+
+    ai_dir = local_path / "ai" if sort else None
+    real_dir = local_path / "real" if sort else None
 
     exclude_dirs = (ai_dir, real_dir) if sort and not force else (None, None)
-    images = collect_images(path, recursive, *exclude_dirs)
+    images = collect_images(local_path, recursive, *exclude_dirs)
 
     if not images:
-        err_console.print(f"[yellow]No images found at {path}[/yellow]")
+        err_console.print(f"[yellow]No images found at {local_path}[/yellow]")
+        if temp_file:
+            temp_file.unlink(missing_ok=True)
         raise typer.Exit(0)
 
-    err_console.print("Loading AI detector...")
-    detector = Detector()
+    # Determine mode
+    if fast:
+        mode = "fast"
+        mode_desc = "fast"
+    elif thorough:
+        mode = "thorough"
+        mode_desc = "thorough"
+    else:
+        mode = "smart"
+        mode_desc = "smart"
+
+    if not quiet:
+        err_console.print(f"Loading detector ({mode_desc} mode)...")
+    detector = Detector(backend=backend, mode=mode)
     detector.load()
-
-    segmenter = None
-    if subjects:
-        err_console.print("Loading segmentation model (Sa2VA-Qwen3-VL-1B)...")
-        from .segment import PersonSegmenter
-
-        segmenter = PersonSegmenter()
-        try:
-            segmenter.load()
-        except RuntimeError as e:
-            err_console.print(f"[red]Error: {e}[/red]")
-            raise typer.Exit(1)
 
     if sort:
         ai_dir.mkdir(exist_ok=True)
@@ -239,7 +312,7 @@ def main(
     moves = []
 
     iterator = tqdm(
-        images, desc="Processing", disable=not show_progress, file=sys.stderr
+        images, desc="Processing", disable=not show_progress or quiet, file=sys.stderr
     )
     for image_path in iterator:
         image = load_image(image_path)
@@ -248,10 +321,7 @@ def main(
             continue
 
         start = time.time()
-        if segmenter:
-            result = detect_with_subjects(image, detector, segmenter)
-        else:
-            result = detector.detect(image)
+        result = detector.detect(image)
         elapsed = time.time() - start
 
         data = format_result(image_path, result, elapsed, threshold)
@@ -291,9 +361,16 @@ def main(
             if format == "text" and not show_progress:
                 verdict = data["verdict"].upper()
                 color = "red" if is_ai else "green"
-                console.print(
-                    f"[{color}]{verdict}[/{color}] ({data['confidence']:.0%})"
-                )
+                conf_str = f"{data['confidence']:.0%}"
+                # Show methods breakdown for single image
+                methods = data["scores"].get("methods", {})
+                if methods:
+                    method_strs = [f"{k}:{v:.0%}" for k, v in methods.items()]
+                    console.print(
+                        f"[{color}]{verdict}[/{color}] ({conf_str}) [{', '.join(method_strs)}]"
+                    )
+                else:
+                    console.print(f"[{color}]{verdict}[/{color}] ({conf_str})")
             elif format == "json" and not output:
                 console.print_json(json.dumps(data))
 
@@ -348,11 +425,15 @@ def main(
         elif format == "json" and show_progress:
             console.print_json(json.dumps(all_results))
 
-        if show_progress and format != "json":
+        if show_progress and format != "json" and not quiet:
             ai_count = sum(1 for r in all_results if r["verdict"] == "ai")
             console.print(
                 f"\n[bold]Summary:[/bold] {ai_count}/{len(all_results)} AI-generated"
             )
+
+    # Cleanup temp file if we downloaded from URL
+    if temp_file:
+        temp_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
